@@ -255,13 +255,15 @@
     <div class="copied-toast" id="toast">copied id</div>
 
     <script>
+        const INDEX_URL = 'https://github.com/thisfckinstar/archives/releases/download/indexes/index.json';
+
         let tracks = [];
         let searchTimeout = null;
 
         async function loadIndex() {
             try {
-                const response = await fetch('index.json');
-                if (!response.ok) throw new Error('index.json not found');
+                const response = await fetch(INDEX_URL);
+                if (!response.ok) throw new Error('failed to fetch index');
 
                 const data = await response.json();
                 tracks = data.tracks;
@@ -281,10 +283,11 @@
             } catch (error) {
                 document.getElementById('results-container').innerHTML = `
                     <div class="error">
-                        <p>impossible to load index</p>
-                        <p style="font-size: 0.8rem; margin-top: 0.5rem;">are you sure index.json is in the same folder?</p>
+                        <p>failed to load index</p>
+                        <p style="font-size: 0.8rem; margin-top: 0.5rem; color: #666;">check console for details</p>
                     </div>
                 `;
+                console.error('failed to load index:', error);
             }
         }
 
@@ -333,7 +336,6 @@
         function showResults(results) {
             const container = document.getElementById('results-container');
 
-            // keep results-info if exists
             const existingInfo = container.querySelector('.results-info');
 
             if (results.length === 0) {
