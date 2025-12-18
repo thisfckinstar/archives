@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="fr">
+<html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -43,7 +43,7 @@
 
         .search-box {
             position: relative;
-            margin-bottom: 2rem;
+            margin-bottom: 1.5rem;
         }
 
         .search-box input {
@@ -86,10 +86,57 @@
             to { transform: rotate(360deg); }
         }
 
+        .results-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 1rem;
+            flex-wrap: wrap;
+            gap: 0.5rem;
+        }
+
         .results-info {
             color: #666;
             font-size: 0.85rem;
-            margin-bottom: 1rem;
+        }
+
+        .pagination {
+            display: flex;
+            gap: 0.25rem;
+            align-items: center;
+        }
+
+        .pagination button {
+            background: #1a1a1a;
+            border: 1px solid #252525;
+            color: #888;
+            padding: 0.4rem 0.8rem;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 0.8rem;
+            transition: all 0.15s;
+        }
+
+        .pagination button:hover:not(:disabled) {
+            background: #252525;
+            color: #fff;
+        }
+
+        .pagination button:disabled {
+            opacity: 0.3;
+            cursor: not-allowed;
+        }
+
+        .pagination button.active {
+            background: #333;
+            color: #fff;
+            border-color: #444;
+        }
+
+        .pagination span {
+            color: #555;
+            font-size: 0.8rem;
+            padding: 0 0.5rem;
         }
 
         .results {
@@ -206,6 +253,10 @@
             font-size: 0.8rem;
         }
 
+        footer p {
+            margin-bottom: 0.3rem;
+        }
+
         @media (max-width: 600px) {
             .track-date {
                 display: none;
@@ -218,6 +269,11 @@
             .track-artwork {
                 width: 40px;
                 height: 40px;
+            }
+
+            .results-header {
+                flex-direction: column;
+                align-items: flex-start;
             }
         }
     </style>
@@ -242,12 +298,12 @@
         <div id="results-container">
             <div class="loading">
                 <div class="loading-spinner"></div>
-                <p>loading latest index...</p>
+                <p>loading index...</p>
             </div>
         </div>
 
         <footer>
-            <p>the current index was generated the <span id="generated-date">-</span></p>
+            <p>index generated <span id="generated-date">-</span></p>
             <p>dm me on discord (thisfuckingstar) for any question</p>
         </footer>
     </div>
@@ -255,10 +311,16 @@
     <div class="copied-toast" id="toast">copied id</div>
 
     <script>
+        // ============ CONFIG ============
         const INDEX_URL = 'https://api.codetabs.com/v1/proxy/?quest=' + encodeURIComponent('https://github.com/thisfckinstar/archives/releases/download/indexes/index.json');
+        const PER_PAGE = 50;
+        // ================================
 
-        let tracks = [];
+        let allTracks = [];
+        let filteredTracks = [];
+        let currentPage = 1;
         let searchTimeout = null;
+        let isLoaded = false;
 
         async function loadIndex() {
             try {
@@ -266,19 +328,21 @@
                 if (!response.ok) throw new Error('failed to fetch index');
 
                 const data = await response.json();
-                tracks = data.tracks;
+                allTracks = data.tracks;
+                filteredTracks = allTracks;
+                isLoaded = true;
 
                 document.getElementById('stats').textContent =
                     `${data.total_tracks.toLocaleString()} tracks · ${data.total_artists.toLocaleString()} artists`;
 
                 document.getElementById('generated-date').textContent =
-                    new Date(data.generated_at).toLocaleDateString('sv-SE')
+                    new Date(data.generated_at).toLocaleDateString('sv-SE');
 
                 const searchInput = document.getElementById('search');
                 searchInput.disabled = false;
                 searchInput.focus();
 
-                showResults(tracks.slice(0, 100));
+                showResults();
 
             } catch (error) {
                 document.getElementById('results-container').innerHTML = `
@@ -292,15 +356,19 @@
         }
 
         function search(query) {
+            if (!isLoaded) return;
+
+            currentPage = 1;
+
             if (!query.trim()) {
-                showResults(tracks.slice(0, 100));
-                updateResultsInfo(tracks.length, tracks.length);
+                filteredTracks = allTracks;
+                showResults();
                 return;
             }
 
             const terms = query.toLowerCase().split(/\s+/).filter(t => t.length > 0);
 
-            const results = tracks.filter(track => {
+            filteredTracks = allTracks.filter(track => {
                 const searchable = [
                     track.t || '',
                     track.a || '',
@@ -311,39 +379,24 @@
                 return terms.every(term => searchable.includes(term));
             });
 
-            showResults(results.slice(0, 100));
-            updateResultsInfo(results.length, tracks.length);
+            showResults();
         }
 
-        function updateResultsInfo(shown, total) {
+        function showResults() {
             const container = document.getElementById('results-container');
-            const existingInfo = container.querySelector('.results-info');
+            const totalPages = Math.ceil(filteredTracks.length / PER_PAGE);
+            const start = (currentPage - 1) * PER_PAGE;
+            const end = start + PER_PAGE;
+            const pageResults = filteredTracks.slice(start, end);
 
-            if (shown === total) {
-                if (existingInfo) existingInfo.remove();
-                return;
-            }
-
-            const info = existingInfo || document.createElement('div');
-            info.className = 'results-info';
-            info.textContent = `${shown.toLocaleString()} results`;
-
-            if (!existingInfo) {
-                container.insertBefore(info, container.firstChild);
-            }
-        }
-
-        function showResults(results) {
-            const container = document.getElementById('results-container');
-
-            const existingInfo = container.querySelector('.results-info');
-
-            if (results.length === 0) {
+            if (filteredTracks.length === 0) {
                 container.innerHTML = '<div class="no-results">no results</div>';
                 return;
             }
 
-            const html = results.map(track => `
+            const paginationHtml = renderPagination(totalPages);
+
+            const resultsHtml = pageResults.map(track => `
                 <div class="track">
                     <img
                         class="track-artwork"
@@ -361,11 +414,52 @@
                 </div>
             `).join('');
 
-            container.innerHTML = '<div class="results">' + html + '</div>';
+            container.innerHTML = `
+                <div class="results-header">
+                    <div class="results-info">${filteredTracks.length.toLocaleString()} results</div>
+                    ${paginationHtml}
+                </div>
+                <div class="results">${resultsHtml}</div>
+                ${totalPages > 1 ? `<div class="results-header" style="margin-top: 1rem; margin-bottom: 0;">${paginationHtml}</div>` : ''}
+            `;
+        }
 
-            if (existingInfo) {
-                container.insertBefore(existingInfo, container.firstChild);
+        function renderPagination(totalPages) {
+            if (totalPages <= 1) return '';
+
+            let buttons = [];
+
+            buttons.push(`<button onclick="goToPage(${currentPage - 1})" ${currentPage === 1 ? 'disabled' : ''}>&lt;</button>`);
+
+            const range = 2;
+            let startPage = Math.max(1, currentPage - range);
+            let endPage = Math.min(totalPages, currentPage + range);
+
+            if (startPage > 1) {
+                buttons.push(`<button onclick="goToPage(1)">1</button>`);
+                if (startPage > 2) buttons.push(`<span>...</span>`);
             }
+
+            for (let i = startPage; i <= endPage; i++) {
+                buttons.push(`<button onclick="goToPage(${i})" class="${i === currentPage ? 'active' : ''}">${i}</button>`);
+            }
+
+            if (endPage < totalPages) {
+                if (endPage < totalPages - 1) buttons.push(`<span>...</span>`);
+                buttons.push(`<button onclick="goToPage(${totalPages})">${totalPages}</button>`);
+            }
+
+            buttons.push(`<button onclick="goToPage(${currentPage + 1})" ${currentPage === totalPages ? 'disabled' : ''}>&gt;</button>`);
+
+            return `<div class="pagination">${buttons.join('')}</div>`;
+        }
+
+        function goToPage(page) {
+            const totalPages = Math.ceil(filteredTracks.length / PER_PAGE);
+            if (page < 1 || page > totalPages) return;
+            currentPage = page;
+            showResults();
+            window.scrollTo({ top: 0, behavior: 'smooth' });
         }
 
         function escapeHtml(text) {
@@ -384,7 +478,7 @@
 
         document.getElementById('search').addEventListener('input', (e) => {
             clearTimeout(searchTimeout);
-            searchTimeout = setTimeout(() => search(e.target.value), 150);
+            searchTimeout = setTimeout(() => search(e.target.value), 200);
         });
 
         loadIndex();
